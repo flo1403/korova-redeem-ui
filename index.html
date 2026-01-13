@@ -4,30 +4,82 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Korova Redeem</title>
+
   <style>
     :root { --card:#fff; --bg:#f6f7f9; --text:#111; --muted:#666; --border:#e6e7ea; }
-    body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial; }
+
+    body {
+      margin:0;
+      background:var(--bg);
+      color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial;
+    }
+
     .wrap { max-width: 560px; margin: 0 auto; padding: 16px; }
     .card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow:0 4px 18px rgba(0,0,0,.04); }
+
     h1 { font-size: 20px; margin: 0 0 6px; }
     .muted { color:var(--muted); font-size: 13px; }
     .status { font-size: 22px; font-weight: 800; margin: 10px 0 6px; }
     .details { white-space: pre-line; font-size: 14px; color:#222; }
+
     .section { margin-top: 14px; }
     .section h2 { font-size: 14px; margin: 0 0 8px; color:#222; }
+
     .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    button { padding: 14px 12px; border-radius: 14px; border: 1px solid var(--border); background:#fff; font-size: 15px; font-weight: 650; cursor:pointer; }
+
+    button {
+      padding: 14px 12px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background:#fff;
+      font-size: 15px;
+      font-weight: 650;
+      cursor:pointer;
+    }
     button:disabled { opacity:.45; cursor:not-allowed; }
+
     .toast { margin-top: 10px; font-size: 14px; }
+    .danger { color:#b00020; font-weight:700; }
+
+    /* ===== Overlay / Modal styles (FIXED) ===== */
     .hidden { display:none; }
-    .overlay { position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; padding:16px; }
-    .modal { width:100%; max-width:420px; background:#fff; border-radius:16px; border:1px solid var(--border); padding:16px; }
+
+    .overlay {
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.35);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:16px;
+    }
+
+    /* IMPORTANT: hidden must always win over overlay */
+    .overlay.hidden { display:none; }
+
+    .modal {
+      width:100%;
+      max-width:420px;
+      background:#fff;
+      border-radius:16px;
+      border:1px solid var(--border);
+      padding:16px;
+      box-shadow:0 20px 40px rgba(0,0,0,0.2);
+    }
+
     .modal h3 { margin:0 0 10px; font-size:16px; }
+
     .row { display:flex; gap:10px; }
     .row button { flex:1; }
-    .danger { color:#b00020; font-weight:700; }
+
+    /* Clean stacking order */
+    #overlaySize { z-index: 1000; }
+    #overlayMilk { z-index: 1100; }
+    #overlayConfirm { z-index: 1200; }
   </style>
 </head>
+
 <body>
   <div class="wrap">
     <div class="card">
@@ -68,11 +120,11 @@
     <div class="modal">
       <h3 id="sizeTitle">Select size</h3>
       <div class="row">
-        <button id="btnSmall">Small</button>
-        <button id="btnBig">Big</button>
+        <button id="btnSmall" type="button">Small</button>
+        <button id="btnBig" type="button">Big</button>
       </div>
       <div class="row" style="margin-top:10px;">
-        <button id="btnCancelSize">Cancel</button>
+        <button id="btnCancelSize" type="button">Cancel</button>
       </div>
     </div>
   </div>
@@ -82,11 +134,11 @@
     <div class="modal">
       <h3 id="milkTitle">Select milk</h3>
       <div class="row">
-        <button id="btnMilkCow">Cow</button>
-        <button id="btnMilkOat">Oat</button>
+        <button id="btnMilkCow" type="button">Cow</button>
+        <button id="btnMilkOat" type="button">Oat</button>
       </div>
       <div class="row" style="margin-top:10px;">
-        <button id="btnMilkCancel">Cancel</button>
+        <button id="btnMilkCancel" type="button">Cancel</button>
       </div>
     </div>
   </div>
@@ -97,288 +149,287 @@
       <h3>Confirm redeem</h3>
       <div id="confirmText" class="muted"></div>
       <div class="row" style="margin-top:10px;">
-        <button id="btnConfirmYes">Confirm</button>
-        <button id="btnConfirmNo">Cancel</button>
+        <button id="btnConfirmYes" type="button">Confirm</button>
+        <button id="btnConfirmNo" type="button">Cancel</button>
       </div>
     </div>
   </div>
 
-<script>
-  // === CONFIG: your n8n endpoints (PRODUCTION: use /webhook/, not /webhook-test/) ===
-  const N8N_REDEEM_API = "https://eduflow.app.n8n.cloud/webhook/redeem-api";
-  const N8N_REDEEM_LOG = "https://eduflow.app.n8n.cloud/webhook/redeem-log";
+  <script>
+    // === CONFIG: your n8n endpoints (PRODUCTION: use /webhook/, not /webhook-test/) ===
+    const N8N_REDEEM_API = "https://eduflow.app.n8n.cloud/webhook/redeem-api";
+    const N8N_REDEEM_LOG = "https://eduflow.app.n8n.cloud/webhook/redeem-log";
 
-  const statusEl = document.getElementById("status");
-  const detailsEl = document.getElementById("details");
-  const toastEl = document.getElementById("toast");
+    const statusEl = document.getElementById("status");
+    const detailsEl = document.getElementById("details");
+    const toastEl = document.getElementById("toast");
 
-  const coffeeSection = document.getElementById("coffeeSection");
-  const matchaSection = document.getElementById("matchaSection");
+    const coffeeSection = document.getElementById("coffeeSection");
+    const matchaSection = document.getElementById("matchaSection");
 
-  const overlaySize = document.getElementById("overlaySize");
-  const btnSmall = document.getElementById("btnSmall");
-  const btnBig = document.getElementById("btnBig");
-  const btnCancelSize = document.getElementById("btnCancelSize");
-  const sizeTitle = document.getElementById("sizeTitle");
+    const overlaySize = document.getElementById("overlaySize");
+    const btnSmall = document.getElementById("btnSmall");
+    const btnBig = document.getElementById("btnBig");
+    const btnCancelSize = document.getElementById("btnCancelSize");
+    const sizeTitle = document.getElementById("sizeTitle");
 
-  const overlayMilk = document.getElementById("overlayMilk");
-  const btnMilkCow = document.getElementById("btnMilkCow");
-  const btnMilkOat = document.getElementById("btnMilkOat");
-  const btnMilkCancel = document.getElementById("btnMilkCancel");
-  const milkTitle = document.getElementById("milkTitle");
+    const overlayMilk = document.getElementById("overlayMilk");
+    const btnMilkCow = document.getElementById("btnMilkCow");
+    const btnMilkOat = document.getElementById("btnMilkOat");
+    const btnMilkCancel = document.getElementById("btnMilkCancel");
+    const milkTitle = document.getElementById("milkTitle");
 
-  const overlayConfirm = document.getElementById("overlayConfirm");
-  const confirmText = document.getElementById("confirmText");
-  const btnConfirmYes = document.getElementById("btnConfirmYes");
-  const btnConfirmNo = document.getElementById("btnConfirmNo");
+    const overlayConfirm = document.getElementById("overlayConfirm");
+    const confirmText = document.getElementById("confirmText");
+    const btnConfirmYes = document.getElementById("btnConfirmYes");
+    const btnConfirmNo = document.getElementById("btnConfirmNo");
 
-  let token = null;
+    let token = null;
 
-  // current selection flow state
-  let selectedDrink = null;
-  let selectedSize = "";
+    // current selection flow state
+    let selectedDrink = null;
+    let selectedSize = "";
 
-  // confirm state
-  let confirmDrink = "";
-  let confirmSize = "";
-  let confirmMilk = "";
+    // confirm state
+    let confirmDrink = "";
+    let confirmSize = "";
+    let confirmMilk = "";
 
-  // prevents multiple listener binds (important!)
-  let listenersBound = false;
+    // prevents multiple listener binds (important!)
+    let listenersBound = false;
 
-  function q(name) { return new URLSearchParams(window.location.search).get(name); }
-  function setToast(msg, isError=false) {
-    toastEl.textContent = msg || "";
-    toastEl.classList.toggle("danger", !!isError);
-    toastEl.classList.toggle("muted", !isError);
-  }
-  function show(el) { el.classList.remove("hidden"); }
-  function hide(el) { el.classList.add("hidden"); }
+    function q(name) { return new URLSearchParams(window.location.search).get(name); }
 
-  function disableAllButtons(disabled=true) {
-    document.querySelectorAll("button[data-drink]").forEach(b => b.disabled = disabled);
-  }
+    function setToast(msg, isError=false) {
+      toastEl.textContent = msg || "";
+      toastEl.classList.toggle("danger", !!isError);
+      toastEl.classList.toggle("muted", !isError);
+    }
 
-  function applyPlanRules(planId) {
-    // coffee_flat => coffee only
-    // matcha_flat => coffee + matcha
-    show(coffeeSection);
-    if (planId === "matcha_flat") show(matchaSection);
-    else hide(matchaSection);
-  }
+    function show(el) { el.classList.remove("hidden"); }
+    function hide(el) { el.classList.add("hidden"); }
 
-  function sizeNeededFor(drink) {
-    const d = (drink || "").toLowerCase();
-    return d.includes("cappuccino") || d.includes("americano");
-  }
+    function disableAllButtons(disabled=true) {
+      document.querySelectorAll("button[data-drink]").forEach(b => b.disabled = disabled);
+    }
 
-  function milkNeededFor(drink) {
-    const d = (drink || "").toLowerCase();
-    return d.includes("cappuccino") || d.includes("flat white") || d.includes("macchiato") || d.includes("matcha latte");
-  }
+    function applyPlanRules(planId) {
+      // coffee_flat => coffee only
+      // matcha_flat => coffee + matcha
+      show(coffeeSection);
+      if (planId === "matcha_flat") show(matchaSection);
+      else hide(matchaSection);
+    }
 
-  function closeAllModals() {
-    hide(overlaySize);
-    hide(overlayMilk);
-    hide(overlayConfirm);
-  }
+    function sizeNeededFor(drink) {
+      const d = (drink || "").toLowerCase();
+      return d.includes("cappuccino") || d.includes("americano");
+    }
 
-  function openSizeModal(drink) {
-    selectedDrink = drink;
-    selectedSize = "";
-    sizeTitle.textContent = `Select size for ${drink}`;
-    show(overlaySize);
-  }
+    function milkNeededFor(drink) {
+      const d = (drink || "").toLowerCase();
+      return d.includes("cappuccino") || d.includes("flat white") || d.includes("macchiato") || d.includes("matcha latte");
+    }
 
-  function closeSizeModal() {
-    hide(overlaySize);
-  }
+    function closeAllModals() {
+      hide(overlaySize);
+      hide(overlayMilk);
+      hide(overlayConfirm);
+    }
 
-  function openMilkModal(drink, size="") {
-    selectedDrink = drink;
-    selectedSize = size;
-    milkTitle.textContent = `Select milk for ${drink}`;
-    show(overlayMilk);
-  }
+    function openSizeModal(drink) {
+      selectedDrink = drink;
+      selectedSize = "";
+      sizeTitle.textContent = `Select size for ${drink}`;
+      show(overlaySize);
+    }
 
-  function closeMilkModal() {
-    hide(overlayMilk);
-    // keep selectedDrink/selectedSize until confirm or cancel handled
-  }
+    function closeSizeModal() {
+      hide(overlaySize);
+    }
 
-  function openConfirm(drink, size="", milk="") {
-    confirmDrink = drink;
-    confirmSize = size;
-    confirmMilk = milk;
-    confirmText.textContent = `${drink}${size ? " · " + size : ""}${milk ? " · " + milk : ""}`;
-    show(overlayConfirm);
-  }
+    function openMilkModal(drink, size="") {
+      selectedDrink = drink;
+      selectedSize = size;
+      milkTitle.textContent = `Select milk for ${drink}`;
+      show(overlayMilk);
+    }
 
-  function closeConfirm() {
-    hide(overlayConfirm);
-    confirmDrink = "";
-    confirmSize = "";
-    confirmMilk = "";
-  }
+    function closeMilkModal() {
+      hide(overlayMilk);
+    }
 
-  async function logDrink(drink, size="", milk="") {
-    setToast("Logging…");
-    const url = `${N8N_REDEEM_LOG}?t=${encodeURIComponent(token)}&drink=${encodeURIComponent(drink)}&size=${encodeURIComponent(size)}&milk=${encodeURIComponent(milk)}`;
-    try {
-      const res = await fetch(url, { method: "GET" });
-      const data = await res.json();
-      if (data.ok) {
-        setToast(`✅ Logged: ${drink}${size ? " ("+size+")" : ""}${milk ? " · "+milk : ""}`);
-      } else {
-        setToast(`❌ ${data.error || "Logging failed"}`, true);
+    function openConfirm(drink, size="", milk="") {
+      confirmDrink = drink;
+      confirmSize = size;
+      confirmMilk = milk;
+      confirmText.textContent = `${drink}${size ? " · " + size : ""}${milk ? " · " + milk : ""}`;
+      show(overlayConfirm);
+    }
+
+    function closeConfirm() {
+      hide(overlayConfirm);
+      confirmDrink = "";
+      confirmSize = "";
+      confirmMilk = "";
+    }
+
+    async function logDrink(drink, size="", milk="") {
+      setToast("Logging…");
+      const url = `${N8N_REDEEM_LOG}?t=${encodeURIComponent(token)}&drink=${encodeURIComponent(drink)}&size=${encodeURIComponent(size)}&milk=${encodeURIComponent(milk)}`;
+      try {
+        const res = await fetch(url, { method: "GET" });
+        const data = await res.json();
+        if (data.ok) {
+          setToast(`✅ Logged: ${drink}${size ? " ("+size+")" : ""}${milk ? " · "+milk : ""}`);
+        } else {
+          setToast(`❌ ${data.error || "Logging failed"}`, true);
+        }
+      } catch (e) {
+        setToast(`❌ Failed to fetch redeem-log`, true);
       }
-    } catch (e) {
-      setToast(`❌ Failed to fetch redeem-log`, true);
     }
-  }
 
-  function bindDrinkButtonsOnce() {
-    if (listenersBound) return;
-    listenersBound = true;
+    function bindDrinkButtonsOnce() {
+      if (listenersBound) return;
+      listenersBound = true;
 
-    document.querySelectorAll("button[data-drink]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const drink = btn.getAttribute("data-drink");
-        if (!drink) return;
+      document.querySelectorAll("button[data-drink]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const drink = btn.getAttribute("data-drink");
+          if (!drink) return;
 
-        // Reset any stale state before starting a new selection flow
-        closeAllModals();
-        setToast("");
+          // Reset stale state before starting a new selection flow
+          closeAllModals();
+          setToast("");
 
-        selectedDrink = drink;
-        selectedSize = "";
+          selectedDrink = drink;
+          selectedSize = "";
 
-        if (sizeNeededFor(drink)) {
-          openSizeModal(drink);
-          return;
-        }
+          if (sizeNeededFor(drink)) {
+            openSizeModal(drink);
+            return;
+          }
 
-        if (milkNeededFor(drink)) {
-          openMilkModal(drink, "");
-          return;
-        }
+          if (milkNeededFor(drink)) {
+            openMilkModal(drink, "");
+            return;
+          }
 
-        // No options needed -> confirm
-        openConfirm(drink, "", "");
+          // No options needed -> confirm
+          openConfirm(drink, "", "");
+        });
       });
-    });
-  }
-
-  // Size modal actions
-  btnSmall.addEventListener("click", () => {
-    if (!selectedDrink) return;
-    const drink = selectedDrink;
-    closeSizeModal();
-    if (milkNeededFor(drink)) openMilkModal(drink, "Small");
-    else openConfirm(drink, "Small", "");
-  });
-
-  btnBig.addEventListener("click", () => {
-    if (!selectedDrink) return;
-    const drink = selectedDrink;
-    closeSizeModal();
-    if (milkNeededFor(drink)) openMilkModal(drink, "Big");
-    else openConfirm(drink, "Big", "");
-  });
-
-  btnCancelSize.addEventListener("click", () => {
-    closeSizeModal();
-    selectedDrink = null;
-    selectedSize = "";
-  });
-
-  // Milk modal actions
-  btnMilkCow.addEventListener("click", () => {
-    if (!selectedDrink) return;
-    const drink = selectedDrink;
-    const size = selectedSize;
-    closeMilkModal();
-    openConfirm(drink, size, "Cow");
-  });
-
-  btnMilkOat.addEventListener("click", () => {
-    if (!selectedDrink) return;
-    const drink = selectedDrink;
-    const size = selectedSize;
-    closeMilkModal();
-    openConfirm(drink, size, "Oat");
-  });
-
-  btnMilkCancel.addEventListener("click", () => {
-    closeMilkModal();
-    selectedDrink = null;
-    selectedSize = "";
-  });
-
-  // Confirm actions
-  btnConfirmYes.addEventListener("click", async () => {
-    if (!confirmDrink) return;
-    const d = confirmDrink, s = confirmSize, m = confirmMilk;
-    closeConfirm();
-    // reset selection state
-    selectedDrink = null;
-    selectedSize = "";
-    await logDrink(d, s, m);
-  });
-
-  btnConfirmNo.addEventListener("click", () => {
-    closeConfirm();
-    // reset selection state
-    selectedDrink = null;
-    selectedSize = "";
-  });
-
-  async function init() {
-    closeAllModals();
-    disableAllButtons(true);
-    setToast("");
-
-    token = (q("t") || "").trim();
-    if (!token) {
-      statusEl.textContent = "❌ Fehler: Kein Token";
-      detailsEl.textContent = "";
-      return;
     }
 
-    try {
-      const res = await fetch(`${N8N_REDEEM_API}?t=${encodeURIComponent(token)}`, { method: "GET" });
-      const data = await res.json();
+    // Size modal actions
+    btnSmall.addEventListener("click", () => {
+      if (!selectedDrink) return;
+      const drink = selectedDrink;
+      closeSizeModal();
+      if (milkNeededFor(drink)) openMilkModal(drink, "Small");
+      else openConfirm(drink, "Small", "");
+    });
 
-      if (!data.found) {
-        statusEl.textContent = "❌ Ungültig (nicht gefunden)";
+    btnBig.addEventListener("click", () => {
+      if (!selectedDrink) return;
+      const drink = selectedDrink;
+      closeSizeModal();
+      if (milkNeededFor(drink)) openMilkModal(drink, "Big");
+      else openConfirm(drink, "Big", "");
+    });
+
+    btnCancelSize.addEventListener("click", () => {
+      closeSizeModal();
+      selectedDrink = null;
+      selectedSize = "";
+    });
+
+    // Milk modal actions
+    btnMilkCow.addEventListener("click", () => {
+      if (!selectedDrink) return;
+      const drink = selectedDrink;
+      const size = selectedSize;
+      closeMilkModal();
+      openConfirm(drink, size, "Cow");
+    });
+
+    btnMilkOat.addEventListener("click", () => {
+      if (!selectedDrink) return;
+      const drink = selectedDrink;
+      const size = selectedSize;
+      closeMilkModal();
+      openConfirm(drink, size, "Oat");
+    });
+
+    btnMilkCancel.addEventListener("click", () => {
+      closeMilkModal();
+      selectedDrink = null;
+      selectedSize = "";
+    });
+
+    // Confirm actions
+    btnConfirmYes.addEventListener("click", async () => {
+      if (!confirmDrink) return;
+      const d = confirmDrink, s = confirmSize, m = confirmMilk;
+      closeConfirm();
+      selectedDrink = null;
+      selectedSize = "";
+      await logDrink(d, s, m);
+    });
+
+    btnConfirmNo.addEventListener("click", () => {
+      closeConfirm();
+      selectedDrink = null;
+      selectedSize = "";
+    });
+
+    async function init() {
+      closeAllModals();
+      disableAllButtons(true);
+      setToast("");
+
+      token = (q("t") || "").trim();
+      if (!token) {
+        statusEl.textContent = "❌ Fehler: Kein Token";
         detailsEl.textContent = "";
         return;
       }
 
-      if (!data.isValid) {
-        statusEl.textContent = "❌ Nicht gültig";
-        detailsEl.textContent = `Grund: ${data.reason}\nGültig bis: ${data.valid_to} 23:59`;
-        return;
+      try {
+        const res = await fetch(`${N8N_REDEEM_API}?t=${encodeURIComponent(token)}`, { method: "GET" });
+        const data = await res.json();
+
+        if (!data.found) {
+          statusEl.textContent = "❌ Ungültig (nicht gefunden)";
+          detailsEl.textContent = "";
+          return;
+        }
+
+        if (!data.isValid) {
+          statusEl.textContent = "❌ Nicht gültig";
+          detailsEl.textContent = `Grund: ${data.reason}\nGültig bis: ${data.valid_to} 23:59`;
+          return;
+        }
+
+        statusEl.textContent = "✅ Gültig";
+        detailsEl.textContent = `Plan: ${data.plan_id}\nVariante: ${data.variant}\nGültig bis: ${data.valid_to} 23:59`;
+
+        applyPlanRules(data.plan_id);
+        bindDrinkButtonsOnce();
+        disableAllButtons(false);
+
+      } catch (e) {
+        statusEl.textContent = "❌ Error";
+        detailsEl.textContent = "TypeError: Failed to fetch (redeem-api)";
+        setToast("Check: redeem-api URL + CORS headers", true);
+      } finally {
+        // fail-safe: ensure no modal is open on load
+        closeAllModals();
       }
-
-      statusEl.textContent = "✅ Gültig";
-      detailsEl.textContent = `Plan: ${data.plan_id}\nVariante: ${data.variant}\nGültig bis: ${data.valid_to} 23:59`;
-
-      applyPlanRules(data.plan_id);
-      bindDrinkButtonsOnce();
-      disableAllButtons(false);
-
-    } catch (e) {
-      statusEl.textContent = "❌ Error";
-      detailsEl.textContent = "TypeError: Failed to fetch (redeem-api)";
-      setToast("Check: redeem-api URL + CORS headers", true);
-    } finally {
-      // fail-safe: ensure no modal is open on load
-      closeAllModals();
     }
-  }
 
-  init();
-</script>
+    init();
+  </script>
 </body>
 </html>
