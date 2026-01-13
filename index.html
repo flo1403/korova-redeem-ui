@@ -25,6 +25,7 @@
     .modal h3 { margin:0 0 10px; font-size:16px; }
     .row { display:flex; gap:10px; }
     .row button { flex:1; }
+    .danger { color:#b00020; font-weight:700; }
   </style>
 </head>
 <body>
@@ -90,8 +91,20 @@
     </div>
   </div>
 
+  <!-- Confirm Modal -->
+  <div id="overlayConfirm" class="overlay hidden">
+    <div class="modal">
+      <h3>Confirm redeem</h3>
+      <div id="confirmText" class="muted"></div>
+      <div class="row" style="margin-top:10px;">
+        <button id="btnConfirmYes">Confirm</button>
+        <button id="btnConfirmNo">Cancel</button>
+      </div>
+    </div>
+  </div>
+
 <script>
-  // === CONFIG: your n8n endpoints ===
+  // === CONFIG: your n8n endpoints (PRODUCTION: use /webhook/, not /webhook-test/) ===
   const N8N_REDEEM_API = "https://eduflow.app.n8n.cloud/webhook/redeem-api";
   const N8N_REDEEM_LOG = "https://eduflow.app.n8n.cloud/webhook/redeem-log";
 
@@ -114,14 +127,31 @@
   const btnMilkCancel = document.getElementById("btnMilkCancel");
   const milkTitle = document.getElementById("milkTitle");
 
+  const overlayConfirm = document.getElementById("overlayConfirm");
+  const confirmText = document.getElementById("confirmText");
+  const btnConfirmYes = document.getElementById("btnConfirmYes");
+  const btnConfirmNo = document.getElementById("btnConfirmNo");
+
   let token = null;
+
+  // current selection flow state
   let selectedDrink = null;
   let selectedSize = "";
 
-  function q(name) {
-    return new URLSearchParams(window.location.search).get(name);
+  // confirm state
+  let confirmDrink = "";
+  let confirmSize = "";
+  let confirmMilk = "";
+
+  // prevents multiple listener binds (important!)
+  let listenersBound = false;
+
+  function q(name) { return new URLSearchParams(window.location.search).get(name); }
+  function setToast(msg, isError=false) {
+    toastEl.textContent = msg || "";
+    toastEl.classList.toggle("danger", !!isError);
+    toastEl.classList.toggle("muted", !isError);
   }
-  function setToast(msg) { toastEl.textContent = msg || ""; }
   function show(el) { el.classList.remove("hidden"); }
   function hide(el) { el.classList.add("hidden"); }
 
@@ -138,13 +168,19 @@
   }
 
   function sizeNeededFor(drink) {
-    const d = drink.toLowerCase();
+    const d = (drink || "").toLowerCase();
     return d.includes("cappuccino") || d.includes("americano");
   }
 
   function milkNeededFor(drink) {
-    const d = drink.toLowerCase();
+    const d = (drink || "").toLowerCase();
     return d.includes("cappuccino") || d.includes("flat white") || d.includes("macchiato") || d.includes("matcha latte");
+  }
+
+  function closeAllModals() {
+    hide(overlaySize);
+    hide(overlayMilk);
+    hide(overlayConfirm);
   }
 
   function openSizeModal(drink) {
@@ -167,90 +203,87 @@
 
   function closeMilkModal() {
     hide(overlayMilk);
-    selectedDrink = null;
-    selectedSize = "";
+    // keep selectedDrink/selectedSize until confirm or cancel handled
+  }
+
+  function openConfirm(drink, size="", milk="") {
+    confirmDrink = drink;
+    confirmSize = size;
+    confirmMilk = milk;
+    confirmText.textContent = `${drink}${size ? " · " + size : ""}${milk ? " · " + milk : ""}`;
+    show(overlayConfirm);
+  }
+
+  function closeConfirm() {
+    hide(overlayConfirm);
+    confirmDrink = "";
+    confirmSize = "";
+    confirmMilk = "";
   }
 
   async function logDrink(drink, size="", milk="") {
     setToast("Logging…");
     const url = `${N8N_REDEEM_LOG}?t=${encodeURIComponent(token)}&drink=${encodeURIComponent(drink)}&size=${encodeURIComponent(size)}&milk=${encodeURIComponent(milk)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.ok) setToast(`✅ Logged: ${drink}${size ? " ("+size+")" : ""}${milk ? " · "+milk : ""}`);
-    else setToast(`❌ ${data.error || "Logging failed"}`);
-  }
-
-  async function init() {
-    token = (q("t") || "").trim();
-    if (!token) {
-      statusEl.textContent = "❌ Fehler: Kein Token";
-      detailsEl.textContent = "";
-      disableAllButtons(true);
-      return;
-    }
-
     try {
-      const res = await fetch(`${N8N_REDEEM_API}?t=${encodeURIComponent(token)}`);
+      const res = await fetch(url, { method: "GET" });
       const data = await res.json();
-
-      if (!data.found) {
-        statusEl.textContent = "❌ Ungültig (nicht gefunden)";
-        detailsEl.textContent = "";
-        disableAllButtons(true);
-        return;
+      if (data.ok) {
+        setToast(`✅ Logged: ${drink}${size ? " ("+size+")" : ""}${milk ? " · "+milk : ""}`);
+      } else {
+        setToast(`❌ ${data.error || "Logging failed"}`, true);
       }
-
-      if (!data.isValid) {
-        statusEl.textContent = "❌ Nicht gültig";
-        detailsEl.textContent = `Grund: ${data.reason}\nGültig bis: ${data.valid_to} 23:59`;
-        disableAllButtons(true);
-        return;
-      }
-
-      statusEl.textContent = "✅ Gültig";
-      detailsEl.textContent = `Plan: ${data.plan_id}\nVariante: ${data.variant}\nGültig bis: ${data.valid_to} 23:59`;
-      applyPlanRules(data.plan_id);
-      disableAllButtons(false);
-
-      document.querySelectorAll("button[data-drink]").forEach(btn => {
-        btn.addEventListener("click", async () => {
-          const drink = btn.getAttribute("data-drink");
-
-          if (sizeNeededFor(drink)) {
-            openSizeModal(drink);
-            return;
-          }
-
-          if (milkNeededFor(drink)) {
-            openMilkModal(drink, "");
-            return;
-          }
-
-          await logDrink(drink, "", "");
-        });
-      });
-
     } catch (e) {
-      statusEl.textContent = "❌ Error";
-      detailsEl.textContent = String(e);
-      disableAllButtons(true);
+      setToast(`❌ Failed to fetch redeem-log`, true);
     }
   }
 
-  btnSmall.addEventListener("click", async () => {
+  function bindDrinkButtonsOnce() {
+    if (listenersBound) return;
+    listenersBound = true;
+
+    document.querySelectorAll("button[data-drink]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const drink = btn.getAttribute("data-drink");
+        if (!drink) return;
+
+        // Reset any stale state before starting a new selection flow
+        closeAllModals();
+        setToast("");
+
+        selectedDrink = drink;
+        selectedSize = "";
+
+        if (sizeNeededFor(drink)) {
+          openSizeModal(drink);
+          return;
+        }
+
+        if (milkNeededFor(drink)) {
+          openMilkModal(drink, "");
+          return;
+        }
+
+        // No options needed -> confirm
+        openConfirm(drink, "", "");
+      });
+    });
+  }
+
+  // Size modal actions
+  btnSmall.addEventListener("click", () => {
     if (!selectedDrink) return;
     const drink = selectedDrink;
     closeSizeModal();
     if (milkNeededFor(drink)) openMilkModal(drink, "Small");
-    else await logDrink(drink, "Small", "");
+    else openConfirm(drink, "Small", "");
   });
 
-  btnBig.addEventListener("click", async () => {
+  btnBig.addEventListener("click", () => {
     if (!selectedDrink) return;
     const drink = selectedDrink;
     closeSizeModal();
     if (milkNeededFor(drink)) openMilkModal(drink, "Big");
-    else await logDrink(drink, "Big", "");
+    else openConfirm(drink, "Big", "");
   });
 
   btnCancelSize.addEventListener("click", () => {
@@ -259,23 +292,91 @@
     selectedSize = "";
   });
 
-  btnMilkCow.addEventListener("click", async () => {
+  // Milk modal actions
+  btnMilkCow.addEventListener("click", () => {
     if (!selectedDrink) return;
     const drink = selectedDrink;
     const size = selectedSize;
     closeMilkModal();
-    await logDrink(drink, size, "Cow");
+    openConfirm(drink, size, "Cow");
   });
 
-  btnMilkOat.addEventListener("click", async () => {
+  btnMilkOat.addEventListener("click", () => {
     if (!selectedDrink) return;
     const drink = selectedDrink;
     const size = selectedSize;
     closeMilkModal();
-    await logDrink(drink, size, "Oat");
+    openConfirm(drink, size, "Oat");
   });
 
-  btnMilkCancel.addEventListener("click", () => closeMilkModal());
+  btnMilkCancel.addEventListener("click", () => {
+    closeMilkModal();
+    selectedDrink = null;
+    selectedSize = "";
+  });
+
+  // Confirm actions
+  btnConfirmYes.addEventListener("click", async () => {
+    if (!confirmDrink) return;
+    const d = confirmDrink, s = confirmSize, m = confirmMilk;
+    closeConfirm();
+    // reset selection state
+    selectedDrink = null;
+    selectedSize = "";
+    await logDrink(d, s, m);
+  });
+
+  btnConfirmNo.addEventListener("click", () => {
+    closeConfirm();
+    // reset selection state
+    selectedDrink = null;
+    selectedSize = "";
+  });
+
+  async function init() {
+    closeAllModals();
+    disableAllButtons(true);
+    setToast("");
+
+    token = (q("t") || "").trim();
+    if (!token) {
+      statusEl.textContent = "❌ Fehler: Kein Token";
+      detailsEl.textContent = "";
+      return;
+    }
+
+    try {
+      const res = await fetch(`${N8N_REDEEM_API}?t=${encodeURIComponent(token)}`, { method: "GET" });
+      const data = await res.json();
+
+      if (!data.found) {
+        statusEl.textContent = "❌ Ungültig (nicht gefunden)";
+        detailsEl.textContent = "";
+        return;
+      }
+
+      if (!data.isValid) {
+        statusEl.textContent = "❌ Nicht gültig";
+        detailsEl.textContent = `Grund: ${data.reason}\nGültig bis: ${data.valid_to} 23:59`;
+        return;
+      }
+
+      statusEl.textContent = "✅ Gültig";
+      detailsEl.textContent = `Plan: ${data.plan_id}\nVariante: ${data.variant}\nGültig bis: ${data.valid_to} 23:59`;
+
+      applyPlanRules(data.plan_id);
+      bindDrinkButtonsOnce();
+      disableAllButtons(false);
+
+    } catch (e) {
+      statusEl.textContent = "❌ Error";
+      detailsEl.textContent = "TypeError: Failed to fetch (redeem-api)";
+      setToast("Check: redeem-api URL + CORS headers", true);
+    } finally {
+      // fail-safe: ensure no modal is open on load
+      closeAllModals();
+    }
+  }
 
   init();
 </script>
